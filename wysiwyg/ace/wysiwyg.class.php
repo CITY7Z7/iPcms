@@ -1,0 +1,106 @@
+<?php
+
+class cmsWysiwygAce extends cmsWysiwyg {
+
+    private static $redactor_loaded = false;
+
+    protected $options = [
+        'theme'                     => 'ace/theme/github_light_default',
+        'mode'                      => 'ace/mode/html',
+        'wrap'                      => true,
+        'fontSize'                  => 14,
+        'enableBasicAutocompletion' => true,
+        'enableSnippets'            => true,
+        'enableEmmet'               => false,
+        'showLineNumbers'           => true,
+        'enableLiveAutocompletion'  => true,
+        'newLineMode'               => 'unix',
+        'autoScrollEditorIntoView'  => true,
+        'minLines'                  => 20,
+        'maxLines'                  => 40
+    ];
+
+    public function displayEditor($field_name, $content = '', $config = []) {
+
+        $this->loadRedactor();
+
+        if($this->dom_id){
+            if(!empty($this->options['wysiwyg_toolbar'])){
+                echo '<div data-field_id="'.$this->dom_id.'" id="wysiwyg_toolbar_'.$this->dom_id.'" class="wysiwyg_toolbar_wrap">'.$this->options['wysiwyg_toolbar'].'</div>';
+                unset($this->options['wysiwyg_toolbar']);
+            }
+            echo html_textarea($field_name, $content, ['id' => $this->dom_id]);
+        }
+
+        ob_start(); ?>
+
+        <script>
+            <?php if($this->dom_id){ ?>
+                ace_global_options['field_<?php echo $this->dom_id; ?>'] = <?php echo json_encode($this->options); ?>;
+                $(function(){
+                    init_ace('<?php echo $this->dom_id; ?>');
+                });
+            <?php } else { ?>
+                ace_global_options['default'] = <?php echo json_encode($this->options); ?>;
+            <?php } ?>
+        </script>
+
+       <?php cmsTemplate::getInstance()->addBottom(ob_get_clean());
+    }
+
+    private function loadRedactor() {
+
+        if(self::$redactor_loaded){ return false; }
+
+        $template = cmsTemplate::getInstance();
+
+        $template->addJSFromContext('wysiwyg/ace/files/ace.js');
+        $template->addJSFromContext('wysiwyg/ace/files/ext-emmet.js');
+        $template->addJSFromContext('wysiwyg/ace/files/ext-language_tools.js');
+
+        ob_start(); ?>
+
+        <script>
+            var ace_global_options = {};
+            function init_ace (dom_id){
+                let aceconfig = {};
+                if(ace_global_options.hasOwnProperty('field_'+dom_id)){
+                    aceconfig = ace_global_options['field_'+dom_id];
+                } else if(ace_global_options.hasOwnProperty('default')) {
+                    aceconfig = ace_global_options.default;
+                }
+                let textarea = $('#'+dom_id).hide();
+                $('<pre class="ace_redactor" id="'+dom_id+'_ace">'+$(textarea).html()+'</pre><div class="scrollmargin"></div>').insertAfter(textarea);
+                ace.require('ace/ext/language_tools');
+                let editor = ace.edit(dom_id+'_ace', aceconfig);
+                editor.getSession().on('changeAnnotation', function() {
+                    let annotations = editor.getSession().getAnnotations()||[], i = len = annotations.length;
+                    while (i--) {
+                        if(/doctype first\. Expected/.test(annotations[i].text)) {
+                            annotations.splice(i, 1);
+                        }
+                    }
+                    if(len>annotations.length) {
+                        editor.getSession().setAnnotations(annotations);
+                    }
+                });
+                editor.getSession().on('change', function(){
+                    textarea.val(editor.getSession().getValue());
+                });
+                icms.forms.addWysiwygsInsertPool(dom_id, function(field_element, text){
+                    editor.session.setValue(text, 1);
+                    editor.clearSelection();
+                    editor.focus();
+                });
+                icms.forms.addWysiwygsAddPool(dom_id, function(field_element, text){
+                    editor.session.insert(editor.getCursorPosition(), text);
+                });
+            }
+        </script>
+
+        <?php $template->addBottom(ob_get_clean());
+
+        self::$redactor_loaded = true;
+    }
+
+}

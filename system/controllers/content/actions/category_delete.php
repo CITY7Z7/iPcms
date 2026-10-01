@@ -1,0 +1,70 @@
+<?php
+/**
+ * @property \modelContent $model
+ */
+class actionContentCategoryDelete extends cmsAction {
+
+    public function run() {
+
+        if (!cmsForm::validateCSRFToken($this->request->get('csrf_token', ''))) {
+            return cmsCore::error404();
+        }
+
+        // Получаем название типа контента и сам тип
+        $ctype = $this->model->getContentTypeByName($this->request->get('ctype_name', ''));
+        if (!$ctype) {
+            return cmsCore::error404();
+        }
+
+        // проверяем наличие доступа
+        if (!cmsUser::isAllowed($ctype['name'], 'delete_cat')) {
+            return cmsCore::error404();
+        }
+
+        $category = $this->model->getCategory($ctype['name'], $this->request->get('id', 0));
+        if (!$category) {
+            return cmsCore::error404();
+        }
+
+        if ($category['path'] && count($category['path']) > 1) {
+            $path   = array_values($category['path']);
+            $parent = $path[count($category['path']) - 2];
+        }
+
+        list($ctype, $category) = cmsEventsManager::hook(
+            ['content_category_before_delete', "content_{$ctype['name']}_category_before_delete"],
+            [$ctype, $category],
+            null,
+            $this->request
+        );
+
+        $this->model->deleteCategory($ctype['name'], $category['id'], true);
+
+        list($ctype, $category) = cmsEventsManager::hook(
+            ['content_category_after_delete', "content_{$ctype['name']}_category_after_delete"],
+            [$ctype, $category],
+            null,
+            $this->request
+        );
+
+        cmsUser::addSessionMessage(LANG_DELETE_SUCCESS, 'success');
+
+        $back_url = $this->getRequestBackUrl();
+
+        if ($back_url) {
+            return $this->redirect($back_url);
+        }
+
+        if ($ctype['options']['list_on']) {
+
+            if (isset($parent)) {
+                return $this->redirectTo($ctype['name'], $parent['slug']);
+            }
+
+            return $this->redirectTo($ctype['name']);
+        }
+
+        return $this->redirectToHome();
+    }
+
+}
